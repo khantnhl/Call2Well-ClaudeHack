@@ -6,7 +6,11 @@ Step 2: Return candidates to Claude for final reasoning
 
 import math
 import os
+from dotenv import load_dotenv
 from supabase import create_client
+
+# Load environment variables from .env file
+load_dotenv()
 
 supabase = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_ANON_KEY"])
 
@@ -101,14 +105,24 @@ def find_clinics(zip_code: str, service_type: str, language: str = "english") ->
     """
     Query Supabase for clinics, score them, return top 5 for Claude to reason over.
     """
+    print(f"[CLINIC DEBUG] find_clinics called with zip={zip_code}, service={service_type}, language={language}")
+
     # Fetch all clinics (306 rows — small enough to filter in Python)
-    response = supabase.table("clinics").select("*").execute()
-    clinics = response.data
+    print(f"[CLINIC DEBUG] Querying Supabase for clinics...")
+    try:
+        response = supabase.table("clinics").select("*").execute()
+        clinics = response.data
+        print(f"[CLINIC DEBUG] Supabase returned {len(clinics)} clinics")
+    except Exception as e:
+        print(f"[CLINIC DEBUG] Supabase query error: {e}")
+        return []
 
     if not clinics:
+        print(f"[CLINIC DEBUG] No clinics found in database")
         return []
 
     user_lat, user_lng = zip_to_coords(zip_code)
+    print(f"[CLINIC DEBUG] User location: {user_lat}, {user_lng}")
 
     # Score all clinics
     scored = []
@@ -118,6 +132,8 @@ def find_clinics(zip_code: str, service_type: str, language: str = "english") ->
 
     # Sort by score, return top 5
     scored.sort(key=lambda x: x[0], reverse=True)
+    print(f"[CLINIC DEBUG] Top 5 scores: {[round(s[0], 1) for s in scored[:5]]}")
+
     top5 = []
     for score, clinic in scored[:5]:
         top5.append({
@@ -132,6 +148,12 @@ def find_clinics(zip_code: str, service_type: str, language: str = "english") ->
             "languages": clinic.get("languages") or [],
             "hours_per_week": clinic.get("hours_per_week"),
             "score": round(score, 1),
+            "lat": clinic.get("lat"),
+            "lng": clinic.get("lng"),
         })
+
+    print(f"[CLINIC DEBUG] Returning {len(top5)} clinics")
+    if top5:
+        print(f"[CLINIC DEBUG] Top clinic: {top5[0]['name']} (score: {top5[0]['score']})")
 
     return top5
