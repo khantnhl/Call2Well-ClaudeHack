@@ -1,0 +1,45 @@
+{
+  "best_zip": "90033",
+  "best_service": "dental",
+  "reason": "The Cesar Chavez / Boyle Heights corridor is the most emotionally authentic location for an uninsured Latina Uber driver \u2014 it's a deeply Latino, working-class neighborhood that judges will immediately recognize. The nearest clinic is only 0.6 miles away, all top clinics speak Spanish, and AltaMed is a well-known trusted brand in the community, making the result feel credible and impressive. A tooth infection scenario creates immediate urgency without being an ER-level crisis, perfectly showcasing ClearPath's value in under 60 seconds.",
+  "demo_neighborhood": "Boyle Heights / East Los Angeles",
+  "top_3_clinics": [
+    {
+      "name": "AltaMed Medical and Dental Group: East Los Angeles, 1st Street",
+      "address": "2219 E 1st St",
+      "zip": "90033-3901",
+      "phone": "888-499-9303",
+      "distance_miles": 0.6,
+      "languages": [
+        "english",
+        "spanish"
+      ],
+      "hours_per_week": "39"
+    },
+    {
+      "name": "WMCHC-Dental",
+      "address": "1828 E Cesar E Chavez Ave",
+      "zip": "90033-2400",
+      "phone": "323-987-1200",
+      "distance_miles": 0.96,
+      "languages": [
+        "english",
+        "spanish"
+      ],
+      "hours_per_week": "45"
+    },
+    {
+      "name": "AltaMed Medical and Dental Group - Boyle Heights",
+      "address": "3945 Whittier Boulevard",
+      "zip": "90023-2440",
+      "phone": "888-499-9303",
+      "distance_miles": 1.55,
+      "languages": [
+        "english",
+        "spanish"
+      ],
+      "hours_per_week": "47"
+    }
+  ],
+  "demo_user_statement": "Hi, I have a really bad toothache \u2014 I think it might be infected \u2014 and I don't have insurance. I'm near Cesar Chavez in East LA and I can't really afford to go to the ER. Is there anywhere close by I can get seen for free?"
+}
