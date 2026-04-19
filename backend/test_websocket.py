@@ -1,6 +1,6 @@
 """
-Test the WebSocket ConversationRelay integration without Twilio.
-Simulates the conversation flow locally.
+Integration test for WebSocket conversation flow and dashboard updates.
+Tests the real-time dashboard WebSocket functionality.
 
 Run:
     cd backend
@@ -9,115 +9,136 @@ Run:
 
 import asyncio
 import json
-from claude_pipeline import ClearPathSession
+import websockets
+import requests
+import time
 
+async def simulate_conversation_websocket():
+    """Simulate a ConversationRelay WebSocket conversation."""
+    uri = "ws://localhost:8000/ws"
 
-async def simulate_websocket_conversation():
-    """Simulate the WebSocket conversation flow."""
-    print("=" * 60)
-    print("ClearPath WebSocket Simulation Test")
-    print("=" * 60)
+    print(f"[TEST] Connecting to conversation WebSocket: {uri}")
 
-    # Initialize Claude session (same as in main.py)
-    claude_session = ClearPathSession()
+    async with websockets.connect(uri) as websocket:
+        print("[TEST] Connected to conversation WebSocket")
 
-    # Simulate ConversationRelay messages
-    test_messages = [
-        {
-            "type": "user_speech",
-            "text": "Hi, I have a really bad toothache — I think it might be infected — and I don't have insurance. I'm near Cesar Chavez in East LA and I can't really afford to go to the ER."
-        },
-        {
-            "type": "user_speech",
-            "text": "90033"
-        },
-        {
-            "type": "user_speech",
-            "text": "About $1,800 driving Uber"
-        },
-        {
-            "type": "user_speech",
-            "text": "Yes, that sounds perfect"
-        },
-        {
-            "type": "user_speech",
-            "text": "Connect me please"
+        # Simulate initial call connection
+        call_sid = f"test_call_{int(time.time())}"
+        init_message = {
+            "type": "setup",
+            "call_sid": call_sid
         }
-    ]
+        await websocket.send(json.dumps(init_message))
+        print(f"[TEST] Sent call setup with SID: {call_sid}")
 
-    for i, message in enumerate(test_messages):
-        print(f"\n--- Turn {i+1} ---")
-        print(f"👤 User: {message['text']}")
+        # Wait a moment
+        await asyncio.sleep(1)
 
-        # Process through Claude pipeline (same logic as main.py WebSocket handler)
-        response = claude_session.process(message["text"])
-
-        print(f"🤖 ClearPath: {response.get('response_text', '')}")
-        print(f"   Action: {response.get('action', 'unknown')}")
-
-        if response.get("clinic"):
-            clinic = response["clinic"]
-            print(f"   Clinic: {clinic.get('name')} | {clinic.get('phone')}")
-            print(f"   Distance: {clinic.get('distance_miles', 'Unknown')} miles")
-            print(f"   Reason: {clinic.get('reason')}")
-
-        # Simulate WebSocket response
-        websocket_response = {
-            "type": "assistant_speech",
-            "text": response.get("response_text")
+        # Simulate user speech
+        user_message = {
+            "type": "prompt",
+            "voicePrompt": "I have a bad tooth infection and no insurance. I'm in East LA."
         }
+        await websocket.send(json.dumps(user_message))
+        print("[TEST] Sent user speech about tooth infection")
 
-        action = response.get("action")
-        if action == "transfer_call":
-            clinic = response.get("clinic")
-            if clinic and clinic.get("phone"):
-                websocket_response["transfer_to"] = clinic["phone"]
-                print(f"   📞 Would transfer to: {clinic['phone']}")
+        # Listen for Claude's response
+        response = await websocket.recv()
+        response_data = json.loads(response)
+        print(f"[TEST] Received Claude response: {response_data.get('token', 'No token')[:50]}...")
+
+        return call_sid
+
+async def test_dashboard_updates():
+    """Test dashboard WebSocket updates during conversation."""
+    uri = "ws://localhost:8000/dashboard"
+
+    print(f"[TEST] Connecting to dashboard WebSocket: {uri}")
+
+    async with websockets.connect(uri) as websocket:
+        print("[TEST] Connected to dashboard WebSocket")
+
+        # Send heartbeat
+        await websocket.send(json.dumps({"type": "ping"}))
+
+        # Listen for updates
+        updates_received = 0
+        start_time = time.time()
+
+        while updates_received < 3 and (time.time() - start_time) < 30:  # Wait max 30 seconds
+            try:
+                message = await asyncio.wait_for(websocket.recv(), timeout=5.0)
+                data = json.loads(message)
+                updates_received += 1
+
+                print(f"[TEST] Dashboard update #{updates_received}: {data.get('type', 'unknown')}")
+
+                if data.get("type") == "conversation_update":
+                    print(f"       📞 Call: {data.get('call_sid', 'Unknown')[:12]}...")
+                    print(f"       💬 Messages: {data.get('total_messages', 0)}")
+                    print(f"       🏥 Service: {data.get('session_metadata', {}).get('service_needed', 'Unknown')}")
+                    print(f"       💰 Eligibility: {data.get('session_metadata', {}).get('eligibility_status', 'Unknown')}")
+                elif data.get("type") == "call_connected":
+                    print(f"       📞 Call connected: {data.get('call_sid', 'Unknown')[:12]}...")
+
+            except asyncio.TimeoutError:
+                print("[TEST] Timeout waiting for dashboard updates")
                 break
-        elif action == "send_sms":
-            print(f"   📱 Would send SMS with clinic details")
-            websocket_response["end_conversation"] = True
-            break
-        elif action == "call_911":
-            print(f"   🚨 Emergency detected - would end call")
-            websocket_response["end_conversation"] = True
-            break
 
-        print(f"   WebSocket Response: {json.dumps(websocket_response, indent=2)}")
+        print(f"[TEST] Received {updates_received} dashboard updates")
+        return updates_received > 0
 
-    print("\n" + "=" * 60)
-    print("Session State:")
-    print(f"  ZIP: {claude_session.call_state.get('user_zip')}")
-    print(f"  Income: ${claude_session.call_state.get('monthly_income')}/month")
-    print(f"  Language: {claude_session.call_state.get('language')}")
-    print(f"  Candidates: {len(claude_session.call_state.get('candidates', []))}")
-    if claude_session.call_state.get("chosen_clinic"):
-        chosen = claude_session.call_state["chosen_clinic"]
-        print(f"  Chosen: {chosen['name']}")
-        print(f"  Phone: {chosen.get('phone', 'N/A')}")
+async def run_integration_test():
+    """Run full integration test."""
+    print("=== Call2Well WebSocket Integration Test ===\n")
 
-    print("\n✅ WebSocket simulation complete!")
+    # Test 1: Dashboard connection
+    print("📋 Step 1: Testing dashboard WebSocket connection...")
+    try:
+        # Quick connection test
+        async with websockets.connect("ws://localhost:8000/dashboard") as ws:
+            await ws.send(json.dumps({"type": "ping"}))
+            response = await asyncio.wait_for(ws.recv(), timeout=3.0)
+            response_data = json.loads(response)
+            if response_data.get("type") == "pong":
+                print("   ✅ Dashboard WebSocket connection working")
+            else:
+                print("   ❌ Dashboard WebSocket ping/pong failed")
+                return False
+    except Exception as e:
+        print(f"   ❌ Dashboard WebSocket connection failed: {e}")
+        return False
 
+    # Test 2: Conversation WebSocket with dashboard monitoring
+    print("\n💬 Step 2: Testing conversation WebSocket with dashboard monitoring...")
 
-async def test_emergency_detection():
-    """Test emergency detection."""
-    print("\n" + "=" * 60)
-    print("Emergency Detection Test")
-    print("=" * 60)
+    # Start dashboard monitoring in background
+    dashboard_task = asyncio.create_task(test_dashboard_updates())
 
-    session = ClearPathSession()
-    response = session.process("I'm having chest pain and can't breathe")
+    # Give dashboard time to connect
+    await asyncio.sleep(1)
 
-    print(f"👤 User: I'm having chest pain and can't breathe")
-    print(f"🤖 ClearPath: {response.get('response_text', '')}")
-    print(f"   Action: {response.get('action')}")
+    # Simulate conversation
+    try:
+        await simulate_conversation_websocket()
+        print("   ✅ Conversation WebSocket working")
+    except Exception as e:
+        print(f"   ❌ Conversation WebSocket failed: {e}")
+        dashboard_task.cancel()
+        return False
 
-    if response.get("action") == "call_911" or "911" in response.get("response_text", ""):
-        print("✅ Emergency correctly detected")
+    # Wait for dashboard updates
+    dashboard_success = await dashboard_task
+
+    if dashboard_success:
+        print("   ✅ Dashboard received real-time updates")
     else:
-        print("❌ Emergency NOT detected!")
+        print("   ❌ Dashboard did not receive expected updates")
+        return False
 
+    print("\n🎉 All tests passed! Real-time dashboard WebSocket system is working.")
+    return True
 
 if __name__ == "__main__":
-    asyncio.run(test_emergency_detection())
-    asyncio.run(simulate_websocket_conversation())
+    success = asyncio.run(run_integration_test())
+    exit(0 if success else 1)

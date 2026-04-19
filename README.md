@@ -1,25 +1,26 @@
-# ClearPath
+# Call2Well
 
 > "We don't just find the clinic — we connect the call."
 
-ClearPath is a voice-based AI navigator for the 27 million uninsured Americans who can't afford a doctor. Call a number, describe your situation in plain language, and ClearPath finds the best free clinic near you — then connects the call directly.
+Call2Well is a voice-based AI navigator for the 27 million uninsured Americans who can't afford a doctor. Call a number, describe your situation in plain language, and Call2Well finds the best free clinic near you — then connects the call directly.
 
 No app. No typing. No insurance jargon. Just call.
 
 ## How It Works
 
-1. **Call** the ClearPath number
+1. **Call** the Call2Well number
 2. **Describe** your situation in any language
 3. **Claude** triages urgency, checks eligibility, finds best-matched clinic
 4. **Choose** to connect directly or receive clinic details by text
 
 ## Tech Stack
 
-- **Claude API** — multi-turn conversation, tool use, multilingual
+- **Claude API** — multi-turn conversation, tool use, multilingual (claude-3-haiku-20240307)
 - **Twilio ConversationRelay** — real-time voice WebSocket integration
 - **Supabase** — HRSA clinic data, ranking queries
-- **FastAPI** — WebSocket server for ConversationRelay
-- **Next.js** — real-time dashboard
+- **FastAPI** — WebSocket server for ConversationRelay + real-time dashboard updates
+- **Next.js + TypeScript** — live dashboard with hybrid WebSocket/polling updates
+- **Real-time Features** — optimistic UI, typing indicators, auto-reconnect, session management
 
 ## Quick Start
 
@@ -124,6 +125,15 @@ Caller → Twilio Number → /voice webhook → <Connect><ConversationRelay>
 - **Multilingual support** — works in any language
 - **Live dashboard** — real-time conversation display for demos
 - **Coordinates included** — ready for map visualization
+
+### Real-time Dashboard Features ✨
+- **Hybrid update system** — WebSocket + polling fallback for bulletproof real-time updates
+- **Optimistic UI updates** — instant visual feedback with loading states
+- **Real-time typing indicators** — animated "thinking" displays when agent is processing
+- **Auto-reconnect WebSocket** — seamless connection recovery
+- **Session management** — clear all sessions with confirmation modal
+- **Smooth animations** — fade-in effects and progress indicators for professional feel
+- **Zero refresh required** — updates appear instantly without manual refresh
 
 ## Data
 

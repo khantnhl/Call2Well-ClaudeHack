@@ -1,9 +1,9 @@
 """
-ClearPath Claude pipeline.
+Call2Well Claude pipeline.
 Manages multi-turn conversation, tool use, and structured responses.
 
 Usage:
-    session = ClearPathSession()
+    session = Call2WellSession()
     response = session.process("I have a tooth infection, no insurance, East LA")
     print(response["response_text"])
 """
@@ -19,7 +19,7 @@ load_dotenv()
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
-SYSTEM_PROMPT = """You are ClearPath, a compassionate AI that helps uninsured people find free or low-cost medical care in Los Angeles.
+SYSTEM_PROMPT = """You are Call2Well, a compassionate AI that helps uninsured people find free or low-cost medical care in Los Angeles.
 
 CRITICAL SAFETY RULE: If the user describes ANY life-threatening symptoms (chest pain, difficulty breathing, severe bleeding, stroke symptoms, loss of consciousness, suicidal thoughts), immediately say: "This sounds like an emergency. Please call 911 right now." Do not proceed to find clinics.
 
@@ -35,7 +35,15 @@ Your job:
 4. When you have condition + ZIP + income → call the find_clinics tool
 5. Present the top clinic with a clear explanation of WHY it was chosen
 6. Ask if the user wants this clinic or to see the next option
-7. If they want this clinic, ask: connect the call now, or send details by text?
+7. If they want this clinic, ask: "Would you like me to connect you directly or send the details to your phone?"
+
+TRANSFER CONFIRMATION: When user says any of these phrases, use "transfer_call" action:
+- "connect me", "transfer me", "call them", "dial them"
+- "yes connect", "connect now", "put me through"
+- "direct me", "transfer the call"
+
+SMS REQUEST: When user asks for text/SMS, use "send_sms" action:
+- "send text", "text me", "send details", "SMS me"
 
 LANGUAGE: Detect the user's language from their message. Respond entirely in that language for the whole conversation.
 TONE: Warm, clear, never medical jargon. You are a navigator, not a doctor.
@@ -53,25 +61,28 @@ Cost estimation (use this when explaining to the user):
 - Income $1,732–$2,510/month → $10–$40
 - Income > $2,510/month → $40+ (still reduced)
 
-After find_clinics returns results, respond with this exact JSON structure:
+RESPONSE FORMAT - CRITICAL: You MUST respond with ONLY valid JSON. No extra text, no explanations, no stage directions. Only the JSON structure below:
+
 {
-  "response_text": "The spoken response to read to the user",
-  "action": "present_clinic",
+  "response_text": "The exact words to speak to the user - natural, conversational language only",
+  "action": "action_type",
   "clinic": {
-    "name": "...",
-    "address": "...",
-    "phone": "...",
-    "reason": "Why this clinic was chosen"
+    "name": "clinic name",
+    "address": "full address",
+    "phone": "phone number",
+    "reason": "Brief reason why this clinic was chosen"
   },
-  "next_prompt": "Would you like to go with this clinic?"
+  "next_prompt": "Follow-up question if needed"
 }
 
 action values:
-- "ask_followup" → need more info, response_text is the question
+- "ask_followup" → need more info, response_text contains the question
 - "present_clinic" → found a match, include clinic object
 - "transfer_call" → user confirmed, ready to transfer
 - "send_sms" → user wants text instead
 - "call_911" → emergency detected
+
+IMPORTANT: The "response_text" field should contain ONLY natural conversational language that will be read aloud to the user. No JSON, no technical details, no stage directions.
 """
 
 TOOLS = [
@@ -122,7 +133,7 @@ def estimate_cost(monthly_income: float) -> str:
         return "$40+ (still reduced)"
 
 
-class ClearPathSession:
+class Call2WellSession:
     """Manages a single call session with multi-turn conversation."""
 
     def __init__(self):
@@ -256,7 +267,58 @@ class ClearPathSession:
             "content": text
         })
 
+        print(f"[CLAUDE DEBUG] Raw Claude response: {repr(text)}")
+
         # Try to parse as JSON (Claude should return JSON when presenting clinics)
+        result = self._extract_json_from_text(text)
+
+        if result:
+            # Store chosen clinic for any action that includes clinic info
+            if result.get("clinic"):
+                self.call_state["chosen_clinic"] = result["clinic"]
+                print(f"[CLAUDE DEBUG] Stored clinic: {result['clinic']['name']}")
+
+            # For transfer_call, ensure we have the clinic info from state
+            if result.get("action") == "transfer_call":
+                if not result.get("clinic") and self.call_state.get("chosen_clinic"):
+                    result["clinic"] = self.call_state["chosen_clinic"]
+                    print(f"[CLAUDE DEBUG] Added clinic from state for transfer: {result['clinic']['name']}")
+
+            # Clean the response_text to ensure only natural language
+            if "response_text" in result:
+                result["response_text"] = self._clean_response_text(result["response_text"])
+
+            print(f"[CLAUDE DEBUG] Extracted JSON: {result}")
+            return result
+        else:
+            # Claude returned plain text — wrap it and clean it
+            clean_text = self._clean_response_text(text)
+            print(f"[CLAUDE DEBUG] Fallback to plain text: {repr(clean_text)}")
+            return {
+                "response_text": clean_text,
+                "action": "ask_followup",
+                "clinic": None,
+                "next_prompt": None
+            }
+
+    def _extract_json_from_text(self, text: str) -> dict:
+        """Extract JSON from text that might contain extra content."""
+        import re
+
+        # Try to find JSON within the text using regex
+        json_pattern = r'\{[\s\S]*?\}'
+        matches = re.findall(json_pattern, text)
+
+        for match in matches:
+            try:
+                result = json.loads(match)
+                # Validate it has the expected structure
+                if "response_text" in result and "action" in result:
+                    return result
+            except json.JSONDecodeError:
+                continue
+
+        # Try parsing the whole text as JSON
         try:
             # Handle markdown code blocks
             clean = text.strip()
@@ -265,15 +327,27 @@ class ClearPathSession:
                 if clean.startswith("json"):
                     clean = clean[4:]
             result = json.loads(clean.strip())
-            # Store chosen clinic if presenting
-            if result.get("action") == "present_clinic" and result.get("clinic"):
-                self.call_state["chosen_clinic"] = result["clinic"]
-            return result
+            if "response_text" in result and "action" in result:
+                return result
         except (json.JSONDecodeError, IndexError):
-            # Claude returned plain text — wrap it
-            return {
-                "response_text": text,
-                "action": "ask_followup",
-                "clinic": None,
-                "next_prompt": None
-            }
+            pass
+
+        return None
+
+    def _clean_response_text(self, text: str) -> str:
+        """Clean response text to remove JSON artifacts and stage directions."""
+        import re
+
+        # Remove JSON blocks
+        text = re.sub(r'\{[\s\S]*?\}', '', text)
+
+        # Remove markdown code blocks
+        text = re.sub(r'```[\s\S]*?```', '', text)
+
+        # Remove stage directions like *transfers the call*
+        text = re.sub(r'\*[^*]*\*', '', text)
+
+        # Remove extra whitespace and newlines
+        text = ' '.join(text.split())
+
+        return text.strip()
