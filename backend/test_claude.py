@@ -19,7 +19,7 @@ def test_claude_api():
 
         # Simple test message
         response = client.messages.create(
-            model="claude-3-5-sonnet-20241022",
+            model="claude-3-haiku-20240307",
             max_tokens=50,
             messages=[{"role": "user", "content": "Say hello in exactly 3 words"}]
         )
