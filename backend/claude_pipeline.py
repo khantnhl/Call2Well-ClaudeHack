@@ -11,7 +11,11 @@ Usage:
 import json
 import os
 import anthropic
+from dotenv import load_dotenv
 from clinic_search import find_clinics
+
+# Load environment variables from .env file
+load_dotenv()
 
 client = anthropic.Anthropic(api_key=os.environ["ANTHROPIC_API_KEY"])
 
@@ -138,30 +142,48 @@ class ClearPathSession:
         Process one turn of conversation.
         Returns dict with response_text, action, and optionally clinic.
         """
+        print(f"[CLAUDE DEBUG] Processing user message: '{user_message}'")
+
         # Add user message to history
         self.messages.append({
             "role": "user",
             "content": user_message
         })
+        print(f"[CLAUDE DEBUG] Message history length: {len(self.messages)}")
 
         # Call Claude
-        response = client.messages.create(
-            model="claude-sonnet-4-6",
-            max_tokens=1024,
-            system=SYSTEM_PROMPT,
-            tools=TOOLS,
-            messages=self.messages
-        )
+        print(f"[CLAUDE DEBUG] Calling Claude API...")
+        try:
+            response = client.messages.create(
+                model="claude-sonnet-4-6",
+                max_tokens=1024,
+                system=SYSTEM_PROMPT,
+                tools=TOOLS,
+                messages=self.messages
+            )
+            print(f"[CLAUDE DEBUG] Claude API response received. Stop reason: {response.stop_reason}")
+        except Exception as e:
+            print(f"[CLAUDE DEBUG] Claude API error: {e}")
+            return {
+                "response_text": "I'm having trouble processing your request right now. Please try again.",
+                "action": "ask_followup",
+                "clinic": None,
+                "next_prompt": None
+            }
 
         # Handle tool use
         if response.stop_reason == "tool_use":
+            print(f"[CLAUDE DEBUG] Claude wants to use tools")
             return self._handle_tool_use(response)
 
         # Handle regular text response
+        print(f"[CLAUDE DEBUG] Claude returned text response")
         return self._handle_text_response(response)
 
     def _handle_tool_use(self, response) -> dict:
         """Claude called find_clinics — execute it and continue."""
+        print(f"[CLAUDE DEBUG] Handling tool use...")
+
         # Add assistant's tool call to history
         self.messages.append({
             "role": "assistant",
@@ -171,6 +193,7 @@ class ClearPathSession:
         # Find the tool use block
         tool_use_block = next(b for b in response.content if b.type == "tool_use")
         tool_input = tool_use_block.input
+        print(f"[CLAUDE DEBUG] Tool input: {tool_input}")
 
         # Store session state
         if tool_input.get("zip"):
@@ -181,12 +204,17 @@ class ClearPathSession:
             self.call_state["language"] = tool_input["language"]
 
         # Execute clinic search
-        print(f"[ClearPath] Searching clinics: {tool_input}")
-        candidates = find_clinics(
-            zip_code=tool_input.get("zip", "90022"),
-            service_type=tool_input.get("service_type", "primary_care"),
-            language=tool_input.get("language", "english")
-        )
+        print(f"[CLAUDE DEBUG] Calling find_clinics with: {tool_input}")
+        try:
+            candidates = find_clinics(
+                zip_code=tool_input.get("zip", "90022"),
+                service_type=tool_input.get("service_type", "primary_care"),
+                language=tool_input.get("language", "english")
+            )
+            print(f"[CLAUDE DEBUG] Found {len(candidates)} candidates")
+        except Exception as e:
+            print(f"[CLAUDE DEBUG] find_clinics error: {e}")
+            candidates = []
 
         # Add cost estimate to each candidate
         monthly_income = tool_input.get("monthly_income", 0)

@@ -16,107 +16,118 @@ No app. No typing. No insurance jargon. Just call.
 ## Tech Stack
 
 - **Claude API** — multi-turn conversation, tool use, multilingual
-- **Twilio Voice** — inbound call, speech-to-text, text-to-speech, call transfer
-- **Twilio SMS** — clinic details to user's phone
+- **Twilio ConversationRelay** — real-time voice WebSocket integration
 - **Supabase** — HRSA clinic data, ranking queries
-- **FastAPI** — backend webhook handler
+- **FastAPI** — WebSocket server for ConversationRelay
 - **Next.js** — real-time dashboard
 
-## Setup
+## Quick Start
 
-### 1. Clone and install
+### 1. Environment Setup
 
 ```bash
-git clone <repo>
-cd clearpath
+# Clone and set environment
+cp .env.example .env
+# Fill in API keys: ANTHROPIC_API_KEY, TWILIO_*, SUPABASE_*
+```
 
-# Backend
+### 2. Backend
+
+```bash
 cd backend
 pip install -r requirements.txt
 
-# Dashboard
-cd ../dashboard
-npm install
-```
-
-### 2. Environment variables
-
-```bash
-cp .env.example .env
-```
-
-Fill in:
-
-```
-ANTHROPIC_API_KEY=
-TWILIO_ACCOUNT_SID=
-TWILIO_AUTH_TOKEN=
-TWILIO_PHONE_NUMBER=
-SUPABASE_URL=
-SUPABASE_ANON_KEY=
-```
-
-### 3. Seed clinic data
-
-```bash
-cd data
+# Seed clinic data (if not already done)
+cd ../data
 python seed_clinics.py
-```
 
-Loads 20–30 enriched LA clinics from HRSA dataset into Supabase.
-
-### 4. Run backend
-
-```bash
-cd backend
+# Start server
+cd ../backend
 uvicorn main:app --reload --port 8000
 ```
 
-Expose via ngrok for Twilio webhooks:
+### 3. Expose with ngrok
 
 ```bash
 ngrok http 8000
+# Copy the https URL to .env as WEBSOCKET_URL
+# Set Twilio webhook URL to: https://<ngrok-url>/voice
 ```
 
-Set Twilio webhook URL to: `https://<ngrok-url>/voice`
-
-### 5. Run dashboard
+### 4. Dashboard
 
 ```bash
 cd dashboard
+npm install
 npm run dev
+# Open http://localhost:3000
 ```
 
-Open `http://localhost:3000` — shows real-time conversation and analysis during calls.
+### 5. Test the Pipeline
+
+```bash
+cd backend
+python test_websocket.py  # Test without Twilio
+python test_pipeline.py   # Test Claude pipeline directly
+```
 
 ## Project Structure
 
 ```
 clearpath/
 ├── backend/
-│   ├── main.py              # FastAPI app, Twilio webhooks
-│   ├── claude_pipeline.py   # Claude multi-turn conversation
+│   ├── main.py              # FastAPI + ConversationRelay WebSocket
+│   ├── claude_pipeline.py   # Claude conversation management
 │   ├── clinic_search.py     # Supabase query + ranking
-│   ├── twilio_handler.py    # TwiML response builder
-│   └── sms.py               # SMS sender
+│   ├── test_websocket.py    # WebSocket simulation test
+│   └── requirements.txt
 ├── dashboard/               # Next.js real-time display
-│   └── pages/index.tsx
+│   ├── pages/index.tsx      # Dashboard UI
+│   └── package.json
 ├── data/
-│   └── seed_clinics.py      # HRSA data loader
+│   ├── seed_clinics.py      # HRSA data loader
+│   └── demo_scenario.json   # Perfect demo script
 └── .env.example
 ```
 
-## Demo
+## Demo Script
 
-Call the Twilio number and say:
+**Call the Twilio number and follow the demo scenario:**
 
-> _"I have a bad tooth infection. I make about $1,800 a month and I don't have insurance. I'm in East LA."_
+> _"Hi, I have a really bad toothache — I think it might be infected — and I don't have insurance. I'm near Cesar Chavez in East LA and I can't really afford to go to the ER."_
 
-ClearPath will triage, find the best dental clinic near you, explain why it was chosen, and offer to connect the call or send details by text.
+**Expected flow:**
+1. Claude asks for ZIP → "90033"
+2. Claude asks for income → "About $1,800 driving Uber"
+3. Claude presents AltaMed 1st Street (0.6 miles, dental specialist)
+4. User accepts → "Yes, that sounds perfect"
+5. Claude offers connection → "Connect me please"
+6. Call transfers to AltaMed: 888-499-9303
+
+**Dashboard shows:** Real-time conversation, Claude analysis, clinic ranking, and selected clinic details with coordinates ready for map integration.
+
+## Architecture
+
+```
+Caller → Twilio Number → /voice webhook → <Connect><ConversationRelay>
+    → WebSocket /ws → Claude Pipeline → Supabase Clinic Search
+    → WebSocket Response → ConversationRelay → Caller
+```
+
+## Key Features
+
+- **Real-time voice conversation** via Twilio ConversationRelay WebSocket
+- **Multi-turn Claude integration** with tool use for clinic search
+- **Sophisticated clinic ranking** with distance, service matching, language support
+- **Emergency detection** — hardcoded 911 redirect for safety
+- **Call transfer and SMS** — direct connection or clinic details by text
+- **Multilingual support** — works in any language
+- **Live dashboard** — real-time conversation display for demos
+- **Coordinates included** — ready for map visualization
 
 ## Data
 
-Clinic data sourced from [HRSA Health Center Service Delivery Sites](https://data.hrsa.gov) — official US government dataset of federally qualified health centers (FQHCs). All clinics are legally required to offer sliding-scale fees. Updated April 2026.
+Clinic data from [HRSA Health Center Service Delivery Sites](https://data.hrsa.gov) — 306+ Los Angeles FQHCs with sliding-scale fees. All clinics legally required to serve uninsured patients.
 
 ## Ethical Design
 
@@ -125,3 +136,8 @@ Clinic data sourced from [HRSA Health Center Service Delivery Sites](https://dat
 - User always chooses the clinic — Claude recommends, human decides
 - "You likely qualify" — never confirms eligibility, that's a clinic decision
 - Works in any language — serves non-English speakers equally
+
+---
+
+**Total build time:** ~3 hours
+**Ready for:** Live demo, judge Q&A, map feature integration
