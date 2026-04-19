@@ -124,9 +124,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     call_sessions[call_sid]["status"] = "connected"
                     print(f"[DEBUG] Updated call session status to connected")
 
-            # Handle user speech
-            if message.get("type") == "user_speech":
-                user_text = message.get("text", "")
+            # Handle user speech (ConversationRelay sends "prompt" type)
+            if message.get("type") == "prompt":
+                user_text = message.get("voicePrompt", "")
                 print(f"[DEBUG] User speech received: '{user_text}'")
 
                 # Process through Claude pipeline
@@ -160,9 +160,9 @@ async def websocket_endpoint(websocket: WebSocket):
                 if action == "call_911":
                     # Emergency - disconnect and let user call 911
                     await websocket.send_text(json.dumps({
-                        "type": "assistant_speech",
-                        "text": response.get("response_text"),
-                        "end_conversation": True
+                        "type": "text",
+                        "token": response.get("response_text"),
+                        "last": True
                     }))
                     break
 
@@ -171,9 +171,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     clinic = response.get("clinic")
                     if clinic and clinic.get("phone"):
                         await websocket.send_text(json.dumps({
-                            "type": "assistant_speech",
-                            "text": "Connecting you now.",
-                            "transfer_to": clinic["phone"]
+                            "type": "text",
+                            "token": "Connecting you now.",
+                            "last": True
                         }))
 
                         # Update call session
@@ -202,9 +202,9 @@ async def websocket_endpoint(websocket: WebSocket):
                             )
 
                             await websocket.send_text(json.dumps({
-                                "type": "assistant_speech",
-                                "text": "I've sent the clinic details to your phone. Have a good day!",
-                                "end_conversation": True
+                                "type": "text",
+                                "token": "I've sent the clinic details to your phone. Have a good day!",
+                                "last": True
                             }))
 
                             # Update call session
@@ -215,16 +215,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         except Exception as e:
                             print(f"SMS send error: {e}")
                             await websocket.send_text(json.dumps({
-                                "type": "assistant_speech",
-                                "text": "I had trouble sending the text. Let me try again - would you like me to connect you directly instead?"
+                                "type": "text",
+                                "token": "I had trouble sending the text. Let me try again - would you like me to connect you directly instead?",
+                                "last": True
                             }))
                 else:
                     # Continue conversation
                     response_text = response.get("response_text", "I'm sorry, I didn't understand that.")
                     print(f"[DEBUG] Sending response to user: '{response_text}'")
                     await websocket.send_text(json.dumps({
-                        "type": "assistant_speech",
-                        "text": response_text
+                        "type": "text",
+                        "token": response_text,
+                        "last": True
                     }))
                     print(f"[DEBUG] Response sent successfully")
 

@@ -155,7 +155,7 @@ class ClearPathSession:
         print(f"[CLAUDE DEBUG] Calling Claude API...")
         try:
             response = client.messages.create(
-                model="claude-sonnet-4-6",
+                model="claude-3-haiku-20240307",
                 max_tokens=1024,
                 system=SYSTEM_PROMPT,
                 tools=TOOLS,
@@ -237,7 +237,7 @@ class ClearPathSession:
 
         # Get Claude's response after seeing the results
         follow_up = client.messages.create(
-            model="claude-sonnet-4-6",
+            model="claude-3-haiku-20240307",
             max_tokens=1024,
             system=SYSTEM_PROMPT,
             tools=TOOLS,
